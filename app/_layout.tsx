@@ -1,59 +1,86 @@
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
+import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
+import { AppState } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { useAuthStore } from '../store/authStore';
+import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { Colors } from '../constants/theme';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { useColorScheme } from '@/components/useColorScheme';
-
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+// Giữ splash screen cho đến khi chúng ta điều hướng xong
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    ...FontAwesome.font,
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  const { isLocked, isFirstTime, lock } = useAuthStore();
+  const segments = useSegments();
+  const router = useRouter();
+  const navigationState = useRootNavigationState();
+  const [isAppReady, setIsAppReady] = useState(false);
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    // Chỉ chạy khi navigation đã sẵn sàng
+    if (!navigationState?.key) return;
 
-  if (!loaded) {
-    return null;
-  }
+    const inLockScreen = segments[0] === 'lock';
+    const needsLock = isFirstTime || isLocked;
 
-  return <RootLayoutNav />;
-}
+    // Use a small timeout to ensure the navigator is mounted
+    const timer = setTimeout(() => {
+      try {
+        if (needsLock && !inLockScreen) {
+          router.replace('/lock');
+        } else if (!needsLock && inLockScreen) {
+          router.replace('/(tabs)');
+        }
+        SplashScreen.hideAsync().catch(() => {});
+      } catch (e) {
+        console.warn('Navigation error in root layout:', e);
+      }
+    }, 1);
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+    return () => clearTimeout(timer);
+  }, [isLocked, isFirstTime, segments, navigationState?.key]);
+
+  // Tự động khóa khi vào background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState.match(/inactive|background/)) {
+        lock();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [lock]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: Colors.bg },
+          animation: 'fade',
+        }}
+      >
+        <Stack.Screen name="lock" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="player"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="playlist/[id]"
+          options={{
+            animation: 'slide_from_right',
+          }}
+        />
       </Stack>
-    </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
