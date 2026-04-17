@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import {
   Plus,
@@ -110,19 +111,31 @@ export default function LibraryScreen() {
   };
 
   const pickFromFiles = async () => {
-    // Luôn copy khi chọn từ Files vì file temp có thể bị xóa
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
-        quality: 1,
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'video/*',
+        copyToCacheDirectory: false, // Tối ưu siêu tốc độ, trỏ thẳng tới memory (content://) thay vì copy vào cache
       });
+      
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        const name = asset.fileName || asset.uri.split('/').pop() || 'video.mp4';
-        handleVideoSelected(asset.uri, name, asset.fileSize || 0, true);
+        const name = asset.name || asset.uri.split('/').pop() || 'video.mp4';
+        
+        // Hỏi người dùng tuỳ chọn import, khuyên dùng 'Tiết kiệm bộ nhớ' cho file GB
+        Alert.alert('Tùy chọn lưu trữ', `Tùy chọn cho Video "${name}"\n\nDùng "Tiết kiệm bộ nhớ" cho file > 1GB để xem mượt và không tốn dung lượng máy.`, [
+          {
+            text: 'Tiết kiệm bộ nhớ (Khuyên dùng)',
+            onPress: () => handleVideoSelected(asset.uri, name, asset.size || 0, false),
+          },
+          {
+            text: 'Sao lưu an toàn (Clone file)',
+            onPress: () => handleVideoSelected(asset.uri, name, asset.size || 0, true),
+          },
+        ]);
       }
     } catch (e) {
       console.error('File pick error:', e);
+      Alert.alert('Lỗi', 'Không thể chọn file. Vui lòng thử lại.');
     }
   };
 
